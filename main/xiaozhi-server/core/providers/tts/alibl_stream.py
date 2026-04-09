@@ -69,16 +69,29 @@ class TTSProvider(TTSProviderBase):
             "X-DashScope-DataInspection": "enable",
         }
 
+    async def open_audio_channels(self, conn):
+        """重写父类方法，在打开音频通道后预建立WebSocket连接"""
+        # 先调用父类方法初始化 conn 和编码器
+        await super().open_audio_channels(conn)
+
+        # 预建立 WebSocket 连接
+        try:
+            await self._ensure_connection()
+            logger.bind(tag=TAG).info("TTS连接预建立完成")
+        except Exception as e:
+            logger.bind(tag=TAG).warning(f"TTS连接预建立失败，将在首次使用时重试: {e}")
+
     async def _ensure_connection(self):
         """确保WebSocket连接可用，支持60秒内连接复用"""
         try:
             current_time = time.time()
             if self.ws and current_time - self.last_active_time < 60:
                 # 一分钟内才可以复用链接进行连续对话
-                logger.bind(tag=TAG).info(f"使用已有链接...")
+                logger.bind(tag=TAG).info(f"tts使用已有链接...")
                 return self.ws
-            logger.bind(tag=TAG).info("开始建立新连接...")
+            logger.bind(tag=TAG).info("tts开始建立新连接...")
 
+            connection_start_time = time.time()
             self.ws = await websockets.connect(
                 self.ws_url,
                 additional_headers=self.header,
@@ -86,8 +99,9 @@ class TTSProvider(TTSProviderBase):
                 ping_timeout=10,
                 close_timeout=10,
             )
+            connection_time = time.time() - connection_start_time
 
-            logger.bind(tag=TAG).info("WebSocket连接建立成功")
+            logger.bind(tag=TAG).info(f"WebSocket连接建立成功，耗时: {connection_time:.3f}秒")
             self.last_active_time = current_time
             return self.ws
         except Exception as e:

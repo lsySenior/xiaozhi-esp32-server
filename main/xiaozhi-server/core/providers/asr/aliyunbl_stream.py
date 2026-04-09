@@ -1,6 +1,7 @@
 import json
 import uuid
 import asyncio
+import time
 import websockets
 import opuslib_next
 from typing import List, TYPE_CHECKING
@@ -59,8 +60,11 @@ class ASRProvider(ASRProviderBase):
         # 先调用父类方法处理基础逻辑
         await super().receive_audio(conn, audio, audio_have_voice)
 
+        if not self.asr_ws:
+            await self._ensure_asr_connection(conn)
+
         # 只在有声音且没有连接时建立连接
-        if audio_have_voice and not self.is_processing and not self.asr_ws:
+        if audio_have_voice and not self.is_processing:
             try:
                 await self._start_recognition(conn)
             except Exception as e:
@@ -78,22 +82,20 @@ class ASRProvider(ASRProviderBase):
                 logger.bind(tag=TAG).warning(f"发送音频失败: {str(e)}")
                 await self._cleanup()
 
-    async def _start_recognition(self, conn: "ConnectionHandler"):
-        """开始识别会话"""
+    async def _ensure_asr_connection(self, conn: "ConnectionHandler"):
+        """确保ASR连接已建立"""
+        # 如果为手动模式,设置超时时长为最大值
+        if conn.client_listen_mode == "manual":
+            self.max_sentence_silence = 6000
+
         try:
-            # 如果为手动模式,设置超时时长为最大值
-            if conn.client_listen_mode == "manual":
-                self.max_sentence_silence = 6000
-
-            self.is_processing = True
-            self.task_id = uuid.uuid4().hex
-
             # 建立WebSocket连接
             headers = {
                 "Authorization": f"Bearer {self.api_key}"
             }
 
-            logger.bind(tag=TAG).debug(f"正在连接阿里百炼ASR服务, task_id: {self.task_id}")
+            logger.bind(tag=TAG).debug("正在连接阿里百炼ASR服务")
+            connect_start_time = time.time()
 
             self.asr_ws = await websockets.connect(
                 self.ws_url,
@@ -104,21 +106,29 @@ class ASRProvider(ASRProviderBase):
                 close_timeout=5,
             )
 
-            logger.bind(tag=TAG).debug("WebSocket连接建立成功")
-
-            self.server_ready = False
-            self.forward_task = asyncio.create_task(self._forward_results(conn))
-
-            # 发送run-task指令
-            run_task_msg = self._build_run_task_message()
-            await self.asr_ws.send(json.dumps(run_task_msg, ensure_ascii=False))
-            logger.bind(tag=TAG).debug("已发送run-task指令，等待服务器准备...")
-
+            connect_time = (time.time() - connect_start_time) * 1000
+            logger.bind(tag=TAG).debug(f"ASR WebSocket连接建立成功，耗时: {connect_time:.2f}ms")      
         except Exception as e:
-            logger.bind(tag=TAG).error(f"建立ASR连接失败: {str(e)}")
+            logger.bind(tag=TAG).error(f"开始识别失败: {str(e)}")
             if self.asr_ws:
                 await self.asr_ws.close()
                 self.asr_ws = None
+            raise
+
+    async def _start_recognition(self, conn: "ConnectionHandler"):
+        """开始识别会话"""
+        try:
+            self.is_processing = True
+            self.task_id = uuid.uuid4().hex
+            
+            self.server_ready = False
+            self.forward_task = asyncio.create_task(self._forward_results(conn))  
+            # 发送run-task指令
+            run_task_msg = self._build_run_task_message()
+            await self.asr_ws.send(json.dumps(run_task_msg, ensure_ascii=False))
+            logger.bind(tag=TAG).debug(f"已发送run-task指令，等待服务器准备...,task_id: {self.task_id}")
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"发送run-task指令失败: {str(e)}")
             self.is_processing = False
             raise
 

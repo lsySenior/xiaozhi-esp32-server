@@ -243,7 +243,7 @@ class TTSProviderBase(ABC):
                 sentence_id = str(uuid.uuid4().hex)
                 conn.sentence_id = sentence_id
         # 对于单句的文本，进行分段处理
-        segments = re.split(r"([。！？!?；;\n])", content_detail)
+        segments = re.split(r"([。！？!?；;，\n])", content_detail)
         for seg in segments:
             self.tts_text_queue.put(
                 TTSMessageDTO(
@@ -254,6 +254,8 @@ class TTSProviderBase(ABC):
                     content_file=content_file,
                 )
             )
+            logger.bind(tag=TAG).debug(f"分割后的句子: {seg}")
+            
 
     async def open_audio_channels(self, conn):
         self.conn = conn

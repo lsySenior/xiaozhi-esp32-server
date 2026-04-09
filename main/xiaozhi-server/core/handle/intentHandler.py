@@ -118,8 +118,11 @@ async def process_intent_result(
 
                                         请根据以上信息回答用户的问题：{original_text}"""
 
-                    response = conn.intent.replyResult(context_prompt, original_text)
-                    speak_txt(conn, response)
+                    #response = conn.intent.replyResult(context_prompt, original_text)
+                    #speak_txt(conn, response)
+                    response = conn.intent.replyResultStream(context_prompt, original_text)
+                    speak_txt_stream(conn, response)
+
 
                 conn.executor.submit(process_context_result)
                 return True
@@ -182,10 +185,13 @@ async def process_intent_result(
                     elif result.action == Action.REQLLM:  # 调用函数后再请求llm生成回复
                         text = result.result
                         conn.dialogue.put(Message(role="tool", content=text))
-                        llm_result = conn.intent.replyResult(text, original_text)
-                        if llm_result is None:
-                            llm_result = text
-                        speak_txt(conn, llm_result)
+                        
+                        #llm_result = conn.intent.replyResult(text, original_text)
+                        #if llm_result is None:
+                        #    llm_result = text
+                        #speak_txt(conn, llm_result)
+                        response = conn.intent.replyResultStream(context_prompt, original_text)
+                        speak_txt_stream(conn, response)
                     elif (
                         result.action == Action.NOTFOUND
                         or result.action == Action.ERROR
@@ -231,3 +237,51 @@ def speak_txt(conn: "ConnectionHandler", text):
         )
     )
     conn.dialogue.put(Message(role="assistant", content=text))
+
+
+def speak_txt_stream(conn: "ConnectionHandler", response_stream):
+    """流式处理LLM响应，边接收边推送到TTS
+
+    Args:
+        conn: 连接处理器
+        response_stream: LLM流式响应生成器
+    """
+    conn.tts.tts_text_queue.put(
+        TTSMessageDTO(
+            sentence_id=conn.sentence_id,
+            sentence_type=SentenceType.FIRST,
+            content_type=ContentType.ACTION,
+        )
+    )
+
+    full_text = ""
+    buffer = ""
+
+    for chunk in response_stream:
+        if conn.client_abort:
+            break
+        full_text += chunk
+        buffer += chunk
+
+        # 达到一定长度或遇到标点时推送到TTS
+        if len(buffer) >= 50 or any(p in buffer for p in "。？！!?；;，,"):
+            conn.tts.tts_one_sentence(conn, ContentType.TEXT, content_detail=buffer)
+            buffer = ""
+
+    # 推送剩余内容
+    if buffer:
+        conn.tts.tts_one_sentence(conn, ContentType.TEXT, content_detail=buffer)
+
+    # 记录完整文本
+    conn.tts_MessageText = full_text
+
+    conn.tts.tts_text_queue.put(
+        TTSMessageDTO(
+            sentence_id=conn.sentence_id,
+            sentence_type=SentenceType.LAST,
+            content_type=ContentType.ACTION,
+        )
+    )
+
+    if full_text:
+        conn.dialogue.put(Message(role="assistant", content=full_text))

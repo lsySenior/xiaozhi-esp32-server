@@ -20,6 +20,14 @@ class LLMProviderBase(ABC):
         for part in self.response("", dialogue, **kwargs):
             result += part
         return result
+
+    def response_stream(self, system_prompt, user_prompt, **kwargs):
+        """流式响应方法，直接返回生成器"""
+        dialogue = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+        return self.response("", dialogue, **kwargs)
     
     def response_with_functions(self, session_id, dialogue, functions=None):
         """

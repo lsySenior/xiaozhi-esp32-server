@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 import websockets
+import socket
 from config.logger import setup_logging
 
 
@@ -74,11 +75,14 @@ class WebSocketServer:
         port = int(server_config.get("port", 8000))
 
         async with websockets.serve(
-            self._handle_connection, host, port, process_request=self._http_response
+            self._handle_connection, host, port, process_request=self._http_response, compression=None
         ):
             await asyncio.Future()
 
     async def _handle_connection(self, websocket: websockets.ServerConnection):
+        sock = websocket.transport.get_extra_info('socket')
+        if sock:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         headers = dict(websocket.request.headers)
         if headers.get("device-id", None) is None:
             # 尝试从 URL 的查询参数中获取 device-id

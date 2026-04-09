@@ -87,10 +87,10 @@ class IntentProvider(IntentProviderBase):
             '返回: {"function_call": {"name": "result_for_context"}}\n'
             "```\n"
             "```\n"
-            "用户: 当前电池电量是多少？\n"
-            '返回: {"function_call": {"name": "get_battery_level", "arguments": {"response_success": "当前电池电量为{value}%", "response_failure": "无法获取Battery的当前电量百分比"}}}\n'
-            "```\n"
-            "```\n"
+            #"用户: 当前电池电量是多少？\n"
+            #'返回: {"function_call": {"name": "get_battery_level", "arguments": {"response_success": "当前电池电量为{value}%", "response_failure": "无法获取Battery的当前电量百分比"}}}\n'
+            #"```\n"
+            #"```\n"
             "用户: 当前屏幕亮度是多少？\n"
             '返回: {"function_call": {"name": "self_screen_get_brightness"}}\n'
             "```\n"
@@ -132,6 +132,17 @@ class IntentProvider(IntentProviderBase):
             logger.bind(tag=TAG).error(f"Error in generating reply result: {e}")
             return get_system_error_response(self.config)
 
+    def replyResultStream(self, text: str, original_text: str):
+        try:
+            return self.llm.response_stream(
+                system_prompt=text,
+                user_prompt="请根据以上内容，像人类一样说话的口吻回复用户，要求简洁，请直接返回结果。用户现在说："
+                + original_text,
+            )
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"Error in generating reply result: {e}")
+            return get_system_error_response(self.config)
+            
     async def detect_intent(
         self, conn: "ConnectionHandler", dialogue_history: List[Dict], text: str
     ) -> str:

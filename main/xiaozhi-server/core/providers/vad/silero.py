@@ -61,6 +61,7 @@ class VADProvider(VADProviderBase):
             return True
 
         try:
+            start_time = time.time()
             self._init_connection_state(conn)
 
             pcm_frame = conn._vad_opus_decoder.decode(opus_packet, 960)
@@ -114,6 +115,7 @@ class VADProvider(VADProviderBase):
                     conn.client_have_voice = True
                     conn.last_activity_time = time.time() * 1000
 
+            logger.bind(tag=TAG).debug(f"VAD耗时: {(time.time() - start_time) * 1000:.2f}ms, 检测结果: {client_have_voice}")
             return client_have_voice
         except opuslib_next.OpusError as e:
             logger.bind(tag=TAG).info(f"解码错误: {e}")
