@@ -197,7 +197,7 @@ async def process_intent_result(
                         #if llm_result is None:
                         #    llm_result = text
                         #speak_txt(conn, llm_result)
-                        response = conn.intent.replyResultStream(context_prompt, original_text)
+                        response = conn.intent.replyResultStream(text, original_text)
                         speak_txt_stream(conn, response)
                     elif (
                         result.action == Action.NOTFOUND
