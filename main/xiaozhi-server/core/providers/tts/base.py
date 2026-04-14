@@ -244,7 +244,11 @@ class TTSProviderBase(ABC):
                 sentence_id = str(uuid.uuid4().hex)
                 conn.sentence_id = sentence_id
         # 对于单句的文本，进行分段处理
-        segments = re.split(r"([。！？!?；;，\n])", content_detail)
+        # 去除中英文空格和换行符
+        content_detail = content_detail.replace(" ", "").replace("　", "").replace("\n", "").replace("\r", "")
+        # 使用findall让标点符号连着前面的文字
+        segments = re.findall(r"[^。！？!?；;，]*[。！？!?；;，]?", content_detail)
+        segments = [seg for seg in segments if seg]  # 过滤空字符串
         for seg in segments:
             self.tts_text_queue.put(
                 TTSMessageDTO(
