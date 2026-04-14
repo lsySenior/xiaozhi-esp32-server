@@ -94,7 +94,8 @@ class ToolManager:
             # 执行工具
             self.logger.info(f"执行工具: {tool_name}，参数: {arguments}")
             result = await executor.execute(self.conn, tool_name, arguments)
-            self.logger.debug(f"工具执行结果: {result}")
+            result_dict = {"action": result.action.value if hasattr(result.action, 'value') else str(result.action), "response": result.response}
+            self.logger.debug(f"工具执行结果: {result_dict}")
             return result
 
         except Exception as e:

@@ -27,6 +27,7 @@ class LLMProviderBase(ABC):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ]
+        logger.bind(tag=TAG).debug(f"dialogue: {dialogue}")
         return self.response("", dialogue, **kwargs)
     
     def response_with_functions(self, session_id, dialogue, functions=None):
