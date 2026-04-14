@@ -112,14 +112,15 @@ class LLMProvider(LLMProviderBase):
                 except IndexError:
                     content = ""
                 if content:
-                    if " "<think>" in content:
-                        is_active = False
-                        content = content.split("("<think>")[0]
-                    if "</think>" in content:
-                        is_active = True
-                        content = content.split("</think>")[-1]
-                    if is_active:
-                        yield content
+                    if content:
+                        if "<think>" in content:
+                            is_active = False
+                            content = content.split("<think>")[0]
+                        if "</think>" in content:
+                            is_active = True
+                            content = content.split("</think>")[-1]
+                        if is_active:
+                            yield content
         finally:
             # 记录整体耗时
             total_time = time.perf_counter() - start_time
