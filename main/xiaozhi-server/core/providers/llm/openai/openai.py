@@ -70,6 +70,7 @@ class LLMProvider(LLMProviderBase):
         return dialogue
 
     def response(self, session_id, dialogue, **kwargs):
+        import time
         dialogue = self.normalize_dialogue(dialogue)
 
         request_params = {
@@ -90,24 +91,39 @@ class LLMProvider(LLMProviderBase):
             if value is not None:
                 request_params[key] = value
 
+        start_time = time.perf_counter()
+        first_chunk_time = None
+        chunk_count = 0
+
         responses = self.client.chat.completions.create(**request_params)
 
         is_active = True
-        for chunk in responses:
-            try:
-                delta = chunk.choices[0].delta if getattr(chunk, "choices", None) else None
-                content = getattr(delta, "content", "") if delta else ""
-            except IndexError:
-                content = ""
-            if content:
-                if "<think>" in content:
-                    is_active = False
-                    content = content.split("<think>")[0]
-                if "</think>" in content:
-                    is_active = True
-                    content = content.split("</think>")[-1]
-                if is_active:
-                    yield content
+        try:
+            for chunk in responses:
+                # 记录首包时间
+                if first_chunk_time is None:
+                    first_chunk_time = time.perf_counter()
+                    first_chunk_ms = (first_chunk_time - start_time) * 1000
+                    logger.bind(tag=TAG).info(f"[LLM耗时] 首包: {first_chunk_ms:.2f}ms")
+                chunk_count += 1
+                try:
+                    delta = chunk.choices[0].delta if getattr(chunk, "choices", None) else None
+                    content = getattr(delta, "content", "") if delta else ""
+                except IndexError:
+                    content = ""
+                if content:
+                    if " "<think>" in content:
+                        is_active = False
+                        content = content.split("("<think>")[0]
+                    if "</think>" in content:
+                        is_active = True
+                        content = content.split("</think>")[-1]
+                    if is_active:
+                        yield content
+        finally:
+            # 记录整体耗时
+            total_time = time.perf_counter() - start_time
+            logger.bind(tag=TAG).info(f"[LLM耗时] 总耗时: {total_time*1000:.2f}ms, 共{chunk_count}个chunk")
 
     def response_with_functions(self, session_id, dialogue, functions=None, **kwargs):
         dialogue = self.normalize_dialogue(dialogue)

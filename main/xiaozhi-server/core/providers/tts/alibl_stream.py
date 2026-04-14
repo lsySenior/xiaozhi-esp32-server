@@ -204,6 +204,10 @@ class TTSProvider(TTSProviderBase):
             filtered_text = MarkdownCleaner.clean_markdown(text)
 
             if filtered_text:
+                # 记录发送时间，用于计算首包延迟
+                self._tts_text_send_time = time.perf_counter()
+                self._tts_first_packet_received = False
+                
                 # 发送continue-task消息
                 continue_task_message = {
                     "header": {
@@ -342,6 +346,7 @@ class TTSProvider(TTSProviderBase):
         """监听TTS响应"""
         try:
             session_finished = False
+            audio_packet_count = 0
             while not self.conn.stop_event.is_set():
                 try:
                     msg = await self.ws.recv()
@@ -371,6 +376,10 @@ class TTSProvider(TTSProviderBase):
                                     )
                                     self.conn.tts_MessageText = None
                             elif event == "task-finished":
+                                # 计算总耗时
+                                if hasattr(self, '_tts_text_send_time') and self._tts_text_send_time:
+                                    total_time = (time.perf_counter() - self._tts_text_send_time) * 1000
+                                    logger.bind(tag=TAG).info(f"[TTS耗时] 总耗时: {total_time:.2f}ms, 共{audio_packet_count}个音频包")
                                 logger.bind(tag=TAG).debug("TTS任务完成~")
                                 self._process_before_stop_play_files()
                                 session_finished = True
@@ -385,6 +394,13 @@ class TTSProvider(TTSProviderBase):
                         except json.JSONDecodeError:
                             logger.bind(tag=TAG).warning("收到无效的JSON消息")
                     elif isinstance(msg, (bytes, bytearray)):
+                        # 记录首包时间
+                        if not self._tts_first_packet_received and hasattr(self, '_tts_text_send_time') and self._tts_text_send_time:
+                            first_packet_time = time.perf_counter()
+                            first_packet_ms = (first_packet_time - self._tts_text_send_time) * 1000
+                            logger.bind(tag=TAG).info(f"[TTS耗时] 首包: {first_packet_ms:.2f}ms")
+                            self._tts_first_packet_received = True
+                        audio_packet_count += 1
                         self.opus_encoder.encode_pcm_to_opus_stream(
                             msg, False, callback=self.handle_opus
                         )
@@ -494,6 +510,11 @@ class TTSProvider(TTSProviderBase):
 
                     # 发送文本
                     filtered_text = MarkdownCleaner.clean_markdown(text)
+                    # 记录发送时间，用于计算首包延迟
+                    tts_text_send_time = time.perf_counter()
+                    tts_first_packet_received = False
+                    audio_packet_count = 0
+                    
                     # 发送continue-task消息
                     continue_task_message = {
                         "header": {
@@ -523,6 +544,13 @@ class TTSProvider(TTSProviderBase):
                     while not task_finished:
                         msg = await ws.recv()
                         if isinstance(msg, (bytes, bytearray)):
+                            # 记录首包时间
+                            if not tts_first_packet_received:
+                                first_packet_time = time.perf_counter()
+                                first_packet_ms = (first_packet_time - tts_text_send_time) * 1000
+                                logger.bind(tag=TAG).info(f"[TTS耗时] 首包: {first_packet_ms:.2f}ms")
+                                tts_first_packet_received = True
+                            audio_packet_count += 1
                             self.opus_encoder.encode_pcm_to_opus_stream(
                                 msg,
                                 end_of_stream=False,
@@ -533,6 +561,8 @@ class TTSProvider(TTSProviderBase):
                             header = data.get("header", {})
                             if header.get("event") == "task-finished":
                                 task_finished = True
+                                total_time = (time.perf_counter() - tts_text_send_time) * 1000
+                                logger.bind(tag=TAG).info(f"[TTS耗时] 总耗时: {total_time:.2f}ms, 共{audio_packet_count}个音频包")
                                 logger.bind(tag=TAG).debug("TTS任务完成")
                             elif header.get("event") == "task-failed":
                                 error_code = header.get("error_code", "unknown")

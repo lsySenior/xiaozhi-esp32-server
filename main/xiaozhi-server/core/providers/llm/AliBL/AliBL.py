@@ -50,6 +50,10 @@ class LLMProvider(LLMProviderBase):
         if self.base_url and ("/api/" in self.base_url):
             dashscope.base_http_api_url = self.base_url
 
+        start_time = time.perf_counter()
+        first_chunk_time = None
+        chunk_count = 0
+
         responses = Application.call(**call_params)
 
         # 流式处理（SDK在stream=True时返回可迭代对象；否则返回单次响应对象）
@@ -60,6 +64,13 @@ class LLMProvider(LLMProviderBase):
         last_text = ""
         try:
             for resp in responses:
+                # 记录首包时间
+                if first_chunk_time is None:
+                    first_chunk_time = time.perf_counter()
+                    first_chunk_ms = (first_chunk_time - start_time) * 1000
+                    logger.bind(tag=TAG).info(f"[LLM耗时] 首包: {first_chunk_ms:.2f}ms")
+                chunk_count += 1
+
                 if resp.status_code != HTTPStatus.OK:
                     logger.bind(tag=TAG).error(
                         f"code={resp.status_code}, message={resp.message}, 请参考文档：https://help.aliyun.com/zh/model-studio/developer-reference/error-code"
@@ -93,6 +104,10 @@ class LLMProvider(LLMProviderBase):
                     chunk = full_text[i:i + self.streaming_chunk_size]
                     if chunk:
                         yield chunk
+        finally:
+            # 记录整体耗时
+            total_time = time.perf_counter() - start_time
+            logger.bind(tag=TAG).info(f"[LLM耗时] 总耗时: {total_time*1000:.2f}ms, 共{chunk_count}个chunk")
 
     def response_with_functions(self, session_id, dialogue, functions=None):
         # 阿里百练当前未支持原生的 function call。为保持兼容，这里回退到普通文本流式输出。
