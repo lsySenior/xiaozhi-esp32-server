@@ -38,8 +38,8 @@ async def handleAudioMessage(conn: "ConnectionHandler", audio):
 
 async def resume_vad_detection(conn: "ConnectionHandler"):
     # 等待2秒后恢复VAD检测
-    await asyncio.sleep(2)
-    conn.just_woken_up = False
+    await asyncio.sleep(2)          # 延迟2秒，避免唤醒后立刻触发检测
+    conn.just_woken_up = False      # 重置唤醒状态标志，恢复正常检测
 
 
 async def startToChat(conn: "ConnectionHandler", text):

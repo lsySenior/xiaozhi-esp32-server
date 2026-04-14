@@ -29,6 +29,7 @@ class ASRProvider(ASRProviderBase):
         self.is_processing = False
         self.server_ready = False  # 服务器准备状态
         self.task_id = None  # 当前任务ID
+        self.recognition_start_time = None  # 识别开始时间
 
         # 阿里百炼配置
         self.api_key = config.get("api_key")
@@ -122,7 +123,9 @@ class ASRProvider(ASRProviderBase):
             self.task_id = uuid.uuid4().hex
             
             self.server_ready = False
-            self.forward_task = asyncio.create_task(self._forward_results(conn))  
+            self.recognition_start_time = time.time()
+            logger.bind(tag=TAG).debug(f"开始识别计时 | task_id: {self.task_id}")
+            self.forward_task = asyncio.create_task(self._forward_results(conn))
             # 发送run-task指令
             run_task_msg = self._build_run_task_message()
             await self.asr_ws.send(json.dumps(run_task_msg, ensure_ascii=False))
@@ -211,7 +214,11 @@ class ASRProvider(ASRProviderBase):
                         is_final = sentence_end and end_time is not None
 
                         if is_final:
-                            logger.bind(tag=TAG).info(f"识别到文本: {text}")
+                            # 计算识别耗时
+                            elapsed_ms = 0
+                            if self.recognition_start_time:
+                                elapsed_ms = (time.time() - self.recognition_start_time) * 1000
+                            logger.bind(tag=TAG).info(f"识别到文本: {text} | 识别耗时: {elapsed_ms:.2f}ms")
 
                             # 手动模式下累积识别结果
                             if conn.client_listen_mode == "manual":
